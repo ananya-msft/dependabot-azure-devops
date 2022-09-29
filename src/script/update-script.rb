@@ -105,7 +105,7 @@ $options[:credentials] << {
   "password" => ENV["AZURE_ACCESS_TOKEN"]
 }
 unless ENV["GITHUB_ACCESS_TOKEN"].to_s.strip.empty?
-  puts "GitHub access token has been provided."
+  STDERR.puts "GitHub access token has been provided."
   $options[:credentials] << {
     "type" => "git_source",
     "host" => "github.com",
@@ -171,7 +171,7 @@ end
 # Setup the hostname, protocol and port to be used #
 ####################################################
 $options[:azure_port] = ENV["AZURE_PORT"] || ($options[:azure_protocol] == "http" ? "80" : "443")
-puts "Using hostname = '#{$options[:azure_hostname]}', protocol = '#{$options[:azure_protocol]}', port = '#{$options[:azure_port]}'."
+STDERR.puts "Using hostname = '#{$options[:azure_hostname]}', protocol = '#{$options[:azure_protocol]}', port = '#{$options[:azure_port]}'."
 
 ##########################
 # Setup Allow conditions #
@@ -236,9 +236,9 @@ end
 
 $api_endpoint = "#{$options[:azure_protocol]}://#{$options[:azure_hostname]}:#{$options[:azure_port]}/"
 $api_endpoint = $api_endpoint + "#{$options[:azure_virtual_directory]}/" if !$options[:azure_virtual_directory].empty?
-puts "Using '#{$api_endpoint}' as API endpoint"
-puts "Pull Requests shall be linked to milestone (work item) #{$options[:milestone]}" if $options[:milestone]
-puts "Pull Requests shall be labeled #{$options[:custom_labels]}" if $options[:custom_labels]
+STDERR.puts "Using '#{$api_endpoint}' as API endpoint"
+STDERR.puts "Pull Requests shall be linked to milestone (work item) #{$options[:milestone]}" if $options[:milestone]
+STDERR.puts "Pull Requests shall be labeled #{$options[:custom_labels]}" if $options[:custom_labels]
 
 # Full name of the repo targeted.
 $repo_name = "#{$options[:azure_organization]}/#{$options[:azure_project]}/_git/#{$options[:azure_repository]}"
@@ -277,9 +277,9 @@ $update_config = $config_file.update_config(
 ##############################
 # Fetch the dependency files #
 ##############################
-puts "Fetching #{$package_manager} dependency files for #{$repo_name}"
-puts "Targeting '#{$options[:branch] || 'default'}' branch under '#{$options[:directory]}' directory"
-puts "Using '#{$options[:requirements_update_strategy]}' requirements update strategy" if $options[:requirements_update_strategy]
+STDERR.puts "Fetching #{$package_manager} dependency files for #{$repo_name}"
+STDERR.puts "Targeting '#{$options[:branch] || 'default'}' branch under '#{$options[:directory]}' directory"
+STDERR.puts "Using '#{$options[:requirements_update_strategy]}' requirements update strategy" if $options[:requirements_update_strategy]
 fetcher = Dependabot::FileFetchers.for_package_manager($package_manager).new(**fetcher_args)
 files = fetcher.files
 commit = fetcher.commit
@@ -287,7 +287,7 @@ commit = fetcher.commit
 ##############################
 # Parse the dependency files #
 ##############################
-puts "Parsing dependencies information"
+STDERR.puts "Parsing dependencies information"
 parser = Dependabot::FileParsers.for_package_manager($package_manager).new(
   dependency_files: files,
   source: $source,
@@ -310,7 +310,7 @@ pull_requests_count = 0
 dependencies.select(&:top_level?).each do |dep|
   # Check if we have reached maximum number of open pull requests
   if $options[:pull_requests_limit] > 0 && pull_requests_count >= $options[:pull_requests_limit]
-    puts "Limit of open pull requests (#{$options[:pull_requests_limit]}) reached."
+    STDERR.puts "Limit of open pull requests (#{$options[:pull_requests_limit]}) reached."
     break
   end
 
@@ -319,7 +319,7 @@ dependencies.select(&:top_level?).each do |dep|
     #########################################
     # Get update details for the dependency #
     #########################################
-    puts "Checking if #{dep.name} #{dep.version} needs updating"
+    STDERR.puts "Checking if #{dep.name} #{dep.version} needs updating"
 
     checker = Dependabot::UpdateCheckers.for_package_manager($package_manager).new(
       dependency: dep,
@@ -330,7 +330,7 @@ dependencies.select(&:top_level?).each do |dep|
     )
 
     if checker.up_to_date?
-      puts "No update needed for #{dep.name} #{dep.version}"
+      STDERR.puts "No update needed for #{dep.name} #{dep.version}"
       next
     end
 
@@ -343,14 +343,14 @@ dependencies.select(&:top_level?).each do |dep|
       elsif !$options[:excluded_requirements].include?(:all) && checker.can_update?(requirements_to_unlock: :all) then :all
       else :update_not_possible
       end
-    puts "Requirements to unlock #{requirements_to_unlock}"
+    STDERR.puts "Requirements to unlock #{requirements_to_unlock}"
     next if requirements_to_unlock == :update_not_possible
 
     # Check if the dependency is allowed
     allow_type = allow_conditions_for(dep)
     allowed = checker.vulnerable? || $options[:allow_conditions].empty? || (allow_type && TYPE_HANDLERS[allow_type].call(dep, checker))
     if !allowed
-      puts "Updating #{dep.name} is not allowed"
+      STDERR.puts "Updating #{dep.name} is not allowed"
       next
     end
 
@@ -363,7 +363,7 @@ dependencies.select(&:top_level?).each do |dep|
     #####################################
     # Generate updated dependency files #
     #####################################
-    puts "Updating #{dep.name} from #{dep.version} to #{checker.latest_version}"
+    STDERR.puts "Updating #{dep.name} from #{dep.version} to #{checker.latest_version}"
     updater = Dependabot::FileUpdaters.for_package_manager($package_manager).new(
       dependencies: updated_deps,
       dependency_files: files,
@@ -372,163 +372,172 @@ dependencies.select(&:top_level?).each do |dep|
 
     updated_files = updater.updated_dependency_files
 
-    ###################################
-    # Find out if a PR already exists #
-    ###################################
-    conflict_pull_request_commit_id = nil
-    conflict_pull_request_id = nil
-    existing_pull_request = nil
-    active_pull_requests_for_this_repo.each do |pr|
-      pr_id = pr["pullRequestId"]
-      title = pr["title"]
-      sourceRefName = pr["sourceRefName"]
-
-      # Filter those containing " #{dep.name} "
-      # The prefix " " and suffix " " avoids taking PRS for dependencies named the same
-      # e.g. Tingle.EventBus and Tingle.EventBus.Transports.Azure.ServiceBus
-      next if !title.include?(" #{dep.name} ")
-
-      # Ensure the title contains the current dependency version
-      # Sometimes, the dep.version might be null such as in npm
-      # when the package.lock.json is not checked into source.
-      if title.include?(dep.name) && dep.version && title.include?(dep.version)
-        # If the title does not contain the updated version,
-        # we need to close the PR and delete it's branch,
-        # because there is a newer version available
-        #
-        # Sample Titles:
-        # Bump Tingle.Extensions.Logging.LogAnalytics from 3.4.2-ci0005 to 3.4.2-ci0006
-        # chore(deps): bump dotenv from 9.0.1 to 9.0.2 in /server
-        if !title.include?("#{updated_deps[0].version} ") && !title.end_with?(updated_deps[0].version)
-          # Close old version PR
-          #azure_client.pull_request_abandon(pr_id)
-          #azure_client.branch_delete(sourceRefName)
-          puts "Closed Pull Request ##{pr_id}"
-          next
-        end
-
-        # If the merge status of the current PR is not successful,
-        # we need to resolve the merge conflicts
-        existing_pull_request = pr
-        if pr["mergeStatus"] != "succeeded"
-          # ignore pull request manully edited
-          next if azure_client.pull_request_commits(pr_id).length > 1
-          # keep pull request
-          conflict_pull_request_commit_id = pr["lastMergeSourceCommit"]["commitId"]
-          conflict_pull_request_id = pr_id
-          break
-        end
+    updated_deps.each do |dep|
+      updated_files.each do |dep_file|
+        # name; previous_version; version; project; path;
+        puts "#{dep.name};#{dep.previous_version};#{dep.version};#{$options[:azure_repository]};#{Pathname.new(File.join(dep_file.directory, dep_file.name)).cleanpath};"
       end
     end
-
-    pull_request = nil
-    pull_request_id = nil
-    if conflict_pull_request_commit_id && conflict_pull_request_id
-      ##############################################
-      # Update pull request with conflict resolved #
-      ##############################################
-      pr_updater = Dependabot::PullRequestUpdater.new(
-        source: $source,
-        base_commit: commit,
-        old_commit: conflict_pull_request_commit_id,
-        files: updated_files,
-        credentials: $options[:credentials],
-        pull_request_number: conflict_pull_request_id,
-        author_details: {
-          email: "noreply@github.com",
-          name: "dependabot[bot]"
-        }
-      )
-
-      print "Submitting pull request (##{conflict_pull_request_id}) update for #{dep.name}. "
-      #pr_updater.update
-      pull_request = existing_pull_request
-      pull_request_id = conflict_pull_request_id
-      puts "Done."
-    elsif !existing_pull_request # Only create PR if there is none existing
-      ########################################
-      # Create a pull request for the update #
-      ########################################
-      pr_creator = Dependabot::PullRequestCreator.new(
-        source: $source,
-        base_commit: commit,
-        dependencies: updated_deps,
-        files: updated_files,
-        credentials: $options[:credentials],
-        # assignees: assignees,
-        author_details: {
-          email: "noreply@github.com",
-          name: "dependabot[bot]"
-        },
-        commit_message_options: $update_config.commit_message_options.to_h,
-        custom_labels: $options[:custom_labels],
-        milestone: $options[:milestone],
-        branch_name_separator: $options[:branch_name_separator],
-        label_language: true,
-        automerge_candidate: $options[:set_auto_complete],
-        github_redirection_service: Dependabot::PullRequestCreator::DEFAULT_GITHUB_REDIRECTION_SERVICE,
-        provider_metadata: {
-          work_item: $options[:milestone],
-        }
-      )
-
-      print "Submitting #{dep.name} pull request for creation. "
-      #pull_request = pr_creator.create
-
-      if pull_request
-        req_status = pull_request&.status
-        if req_status == 201
-          pull_request = JSON[pull_request.body]
-          pull_request_id = pull_request["pullRequestId"]
-          puts "Done (PR ##{pull_request_id})."
-        else
-          content = JSON[pull_request.body]
-          message = content["message"]
-          puts "Failed! PR already exists or an error has occurred."
-          # throw exception here because pull_request.create does not throw
-          raise StandardError.new "Pull Request creation failed with status #{req_status}. Message: #{message}"
-        end
-      else
-        puts "Seems PR is already present."
-      end
-    else
-      pull_request = existing_pull_request # One already existed
-      pull_request_id = pull_request["pullRequestId"]
-      puts "Pull request for #{dep.version} already exists (##{pull_request_id}) and does not need updating."
-    end
-
-    pull_requests_count += 1
-    next unless pull_request_id
-
-    if $options[:auto_approve_pr]
-      puts "Auto Approving PR for user #{$options[:auto_approve_user_email]}"
-
-      if not $options[:auto_approve_user_token]
-        puts "No dedicated token set for auto approve - using regular Access Token"
-        $options[:auto_approve_user_token] = ENV["AZURE_ACCESS_TOKEN"]
-      end
-
-      #azure_client.pull_request_approve(
-      #  pull_request_id,
-      #  $options[:auto_approve_user_email],
-      #  $options[:auto_approve_user_token]
-      #)
-    end
-
-    # Set auto complete for this Pull Request
-    # Pull requests that pass all policies will be merged automatically.
-    if $options[:set_auto_complete]
-      auto_complete_user_id = pull_request["createdBy"]["id"]
-      merge_strategy = $options[:merge_strategy]
-      puts "Setting auto complete on ##{pull_request_id}."
-      #azure_client.pull_request_auto_complete(pull_request_id, auto_complete_user_id, merge_strategy)
-    end
-
-  rescue StandardError => e
-    raise e if $options[:fail_on_exception]
-    puts "Error updating #{dep.name} from #{dep.version} to #{checker.latest_version} (continuing)"
-    puts e.full_message
   end
 end
-
-puts "Done"
+#     ###################################
+#     # Find out if a PR already exists #
+#     ###################################
+#     conflict_pull_request_commit_id = nil
+#     conflict_pull_request_id = nil
+#     existing_pull_request = nil
+#     active_pull_requests_for_this_repo.each do |pr|
+#       pr_id = pr["pullRequestId"]
+#       title = pr["title"]
+#       sourceRefName = pr["sourceRefName"]
+#
+#       # Filter those containing " #{dep.name} "
+#       # The prefix " " and suffix " " avoids taking PRS for dependencies named the same
+#       # e.g. Tingle.EventBus and Tingle.EventBus.Transports.Azure.ServiceBus
+#       next if !title.include?(" #{dep.name} ")
+#
+#       # Ensure the title contains the current dependency version
+#       # Sometimes, the dep.version might be null such as in npm
+#       # when the package.lock.json is not checked into source.
+#       if title.include?(dep.name) && dep.version && title.include?(dep.version)
+#         # If the title does not contain the updated version,
+#         # we need to close the PR and delete it's branch,
+#         # because there is a newer version available
+#         #
+#         # Sample Titles:
+#         # Bump Tingle.Extensions.Logging.LogAnalytics from 3.4.2-ci0005 to 3.4.2-ci0006
+#         # chore(deps): bump dotenv from 9.0.1 to 9.0.2 in /server
+#         if !title.include?("#{updated_deps[0].version} ") && !title.end_with?(updated_deps[0].version)
+#           # Close old version PR
+#           #azure_client.pull_request_abandon(pr_id)
+#           #azure_client.branch_delete(sourceRefName)
+#           puts "Closed Pull Request ##{pr_id}"
+#           next
+#         end
+#
+#         # If the merge status of the current PR is not successful,
+#         # we need to resolve the merge conflicts
+#         existing_pull_request = pr
+#         if pr["mergeStatus"] != "succeeded"
+#           # ignore pull request manully edited
+#           next if azure_client.pull_request_commits(pr_id).length > 1
+#           # keep pull request
+#           conflict_pull_request_commit_id = pr["lastMergeSourceCommit"]["commitId"]
+#           conflict_pull_request_id = pr_id
+#           break
+#         end
+#       end
+#     end
+#
+#     pull_request = nil
+#     pull_request_id = nil
+#     if conflict_pull_request_commit_id && conflict_pull_request_id
+#       ##############################################
+#       # Update pull request with conflict resolved #
+#       ##############################################
+#       pr_updater = Dependabot::PullRequestUpdater.new(
+#         source: $source,
+#         base_commit: commit,
+#         old_commit: conflict_pull_request_commit_id,
+#         files: updated_files,
+#         credentials: $options[:credentials],
+#         pull_request_number: conflict_pull_request_id,
+#         author_details: {
+#           email: "noreply@github.com",
+#           name: "dependabot[bot]"
+#         }
+#       )
+#
+#       print "Submitting pull request (##{conflict_pull_request_id}) update for #{dep.name}. "
+#       #pr_updater.update
+#       pull_request = existing_pull_request
+#       pull_request_id = conflict_pull_request_id
+#       puts "Done."
+#     elsif !existing_pull_request # Only create PR if there is none existing
+#       ########################################
+#       # Create a pull request for the update #
+#       ########################################
+#       pr_creator = Dependabot::PullRequestCreator.new(
+#         source: $source,
+#         base_commit: commit,
+#         dependencies: updated_deps,
+#         files: updated_files,
+#         credentials: $options[:credentials],
+#         # assignees: assignees,
+#         author_details: {
+#           email: "noreply@github.com",
+#           name: "dependabot[bot]"
+#         },
+#         commit_message_options: $update_config.commit_message_options.to_h,
+#         custom_labels: $options[:custom_labels],
+#         milestone: $options[:milestone],
+#         branch_name_separator: $options[:branch_name_separator],
+#         label_language: true,
+#         automerge_candidate: $options[:set_auto_complete],
+#         github_redirection_service: Dependabot::PullRequestCreator::DEFAULT_GITHUB_REDIRECTION_SERVICE,
+#         provider_metadata: {
+#           work_item: $options[:milestone],
+#         }
+#       )
+#
+#       print "Submitting #{dep.name} pull request for creation. "
+#       #pull_request = pr_creator.create
+#
+#       if pull_request
+#         req_status = pull_request&.status
+#         if req_status == 201
+#           pull_request = JSON[pull_request.body]
+#           pull_request_id = pull_request["pullRequestId"]
+#           puts "Done (PR ##{pull_request_id})."
+#         else
+#           content = JSON[pull_request.body]
+#           message = content["message"]
+#           puts "Failed! PR already exists or an error has occurred."
+#           # throw exception here because pull_request.create does not throw
+#           raise StandardError.new "Pull Request creation failed with status #{req_status}. Message: #{message}"
+#         end
+#       else
+#         puts "Seems PR is already present."
+#       end
+#     else
+#       pull_request = existing_pull_request # One already existed
+#       pull_request_id = pull_request["pullRequestId"]
+#       puts "Pull request for #{dep.version} already exists (##{pull_request_id}) and does not need updating."
+#     end
+#
+#     pull_requests_count += 1
+#     next unless pull_request_id
+#
+#     if $options[:auto_approve_pr]
+#       puts "Auto Approving PR for user #{$options[:auto_approve_user_email]}"
+#
+#       if not $options[:auto_approve_user_token]
+#         puts "No dedicated token set for auto approve - using regular Access Token"
+#         $options[:auto_approve_user_token] = ENV["AZURE_ACCESS_TOKEN"]
+#       end
+#
+#       #azure_client.pull_request_approve(
+#       #  pull_request_id,
+#       #  $options[:auto_approve_user_email],
+#       #  $options[:auto_approve_user_token]
+#       #)
+#     end
+#
+#     # Set auto complete for this Pull Request
+#     # Pull requests that pass all policies will be merged automatically.
+#     if $options[:set_auto_complete]
+#       auto_complete_user_id = pull_request["createdBy"]["id"]
+#       merge_strategy = $options[:merge_strategy]
+#       puts "Setting auto complete on ##{pull_request_id}."
+#       #azure_client.pull_request_auto_complete(pull_request_id, auto_complete_user_id, merge_strategy)
+#     end
+#
+#   rescue StandardError => e
+#     raise e if $options[:fail_on_exception]
+#     puts "Error updating #{dep.name} from #{dep.version} to #{checker.latest_version} (continuing)"
+#     puts e.full_message
+#   end
+# end
+#
+# puts "Done"
+#
