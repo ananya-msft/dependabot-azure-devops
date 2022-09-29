@@ -11,7 +11,8 @@ require "dependabot/file_updaters"
 require "dependabot/pull_request_creator"
 require "dependabot/pull_request_updater"
 require "dependabot/config/file_fetcher"
-require "dependabot/omnibus"
+require "dependabot/nuget"
+#require "dependabot/omnibus"
 
 require_relative "azure_helpers"
 
@@ -292,7 +293,6 @@ parser = Dependabot::FileParsers.for_package_manager($package_manager).new(
   source: $source,
   credentials: $options[:credentials],
 )
-
 dependencies = parser.parse
 
 ################################################
@@ -343,7 +343,7 @@ dependencies.select(&:top_level?).each do |dep|
       elsif !$options[:excluded_requirements].include?(:all) && checker.can_update?(requirements_to_unlock: :all) then :all
       else :update_not_possible
       end
-
+    puts "#{checker.can_update?(requirements_to_unlock: :none)} #{checker.can_update?(requirements_to_unlock: :own)} #{checker.can_update?(requirements_to_unlock: :all)}"
     puts "Requirements to unlock #{requirements_to_unlock}"
     next if requirements_to_unlock == :update_not_possible
 
@@ -358,6 +358,7 @@ dependencies.select(&:top_level?).each do |dep|
     updated_deps = checker.updated_dependencies(
       requirements_to_unlock: requirements_to_unlock
     )
+    updated_deps.each { |dep| puts "#{dep.display_name} #{dep.previous_version} -> #{dep.version}" }
 
     #####################################
     # Generate updated dependency files #
@@ -400,8 +401,8 @@ dependencies.select(&:top_level?).each do |dep|
         # chore(deps): bump dotenv from 9.0.1 to 9.0.2 in /server
         if !title.include?("#{updated_deps[0].version} ") && !title.end_with?(updated_deps[0].version)
           # Close old version PR
-          azure_client.pull_request_abandon(pr_id)
-          azure_client.branch_delete(sourceRefName)
+          #azure_client.pull_request_abandon(pr_id)
+          #azure_client.branch_delete(sourceRefName)
           puts "Closed Pull Request ##{pr_id}"
           next
         end
@@ -440,7 +441,7 @@ dependencies.select(&:top_level?).each do |dep|
       )
 
       print "Submitting pull request (##{conflict_pull_request_id}) update for #{dep.name}. "
-      pr_updater.update
+      #pr_updater.update
       pull_request = existing_pull_request
       pull_request_id = conflict_pull_request_id
       puts "Done."
@@ -472,7 +473,7 @@ dependencies.select(&:top_level?).each do |dep|
       )
 
       print "Submitting #{dep.name} pull request for creation. "
-      pull_request = pr_creator.create
+      #pull_request = pr_creator.create
 
       if pull_request
         req_status = pull_request&.status
@@ -507,11 +508,11 @@ dependencies.select(&:top_level?).each do |dep|
         $options[:auto_approve_user_token] = ENV["AZURE_ACCESS_TOKEN"]
       end
 
-      azure_client.pull_request_approve(
-        pull_request_id,
-        $options[:auto_approve_user_email],
-        $options[:auto_approve_user_token]
-      )
+      #azure_client.pull_request_approve(
+      #  pull_request_id,
+      #  $options[:auto_approve_user_email],
+      #  $options[:auto_approve_user_token]
+      #)
     end
 
     # Set auto complete for this Pull Request
@@ -520,7 +521,7 @@ dependencies.select(&:top_level?).each do |dep|
       auto_complete_user_id = pull_request["createdBy"]["id"]
       merge_strategy = $options[:merge_strategy]
       puts "Setting auto complete on ##{pull_request_id}."
-      azure_client.pull_request_auto_complete(pull_request_id, auto_complete_user_id, merge_strategy)
+      #azure_client.pull_request_auto_complete(pull_request_id, auto_complete_user_id, merge_strategy)
     end
 
   rescue StandardError => e
