@@ -343,7 +343,6 @@ dependencies.select(&:top_level?).each do |dep|
       elsif !$options[:excluded_requirements].include?(:all) && checker.can_update?(requirements_to_unlock: :all) then :all
       else :update_not_possible
       end
-    puts "#{checker.can_update?(requirements_to_unlock: :none)} #{checker.can_update?(requirements_to_unlock: :own)} #{checker.can_update?(requirements_to_unlock: :all)}"
     puts "Requirements to unlock #{requirements_to_unlock}"
     next if requirements_to_unlock == :update_not_possible
 
@@ -358,7 +357,8 @@ dependencies.select(&:top_level?).each do |dep|
     updated_deps = checker.updated_dependencies(
       requirements_to_unlock: requirements_to_unlock
     )
-    updated_deps.each { |dep| puts "#{dep.display_name} #{dep.previous_version} -> #{dep.version}" }
+    ## -- to check if > 1 deps is updated for this 'one' `dep`!! --
+    ## updated_deps.each { |dep| puts "#{dep.display_name} #{dep.previous_version} -> #{dep.version}" }
 
     #####################################
     # Generate updated dependency files #
