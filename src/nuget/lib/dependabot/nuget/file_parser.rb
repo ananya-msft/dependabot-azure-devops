@@ -81,7 +81,7 @@ module Dependabot
       end
 
       def nuget_configs
-        dependency_files.select { |f| f.name.match?(/nuget\.config$/i) }
+        dependency_files.select { |f| f.name.match?(/nuget\.config$/i) || f.name.match?(/corext\.config$/i) }
       end
 
       def global_json
