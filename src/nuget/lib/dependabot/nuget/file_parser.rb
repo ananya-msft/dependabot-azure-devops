@@ -67,7 +67,8 @@ module Dependabot
 
       def packages_config_files
         dependency_files.select do |f|
-          f.name.split("/").last.casecmp("packages.config").zero?
+          f.name.split("/").last.casecmp("packages.config").zero? ||
+          f.name.split("/").last.casecmp("corext.config").zero?
         end
       end
 

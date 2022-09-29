@@ -21,7 +21,9 @@ module Dependabot
           @declaring_requirement  = declaring_requirement
 
           if declaring_requirement[:file].split("/").last.
-             casecmp("packages.config").zero?
+             casecmp("packages.config").zero? ||
+             declaring_requirement[:file].split("/").last.
+             casecmp("corext.config").zero?
             return
           end
 

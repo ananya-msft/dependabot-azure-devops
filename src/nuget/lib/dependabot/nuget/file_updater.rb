@@ -14,6 +14,7 @@ module Dependabot
         [
           %r{^[^/]*\.[a-z]{2}proj$},
           /^packages\.config$/i,
+          /^corext\.config$/i,
           /^global\.json$/i,
           /^Directory\.Build\.props$/i,
           /^Directory\.Build\.targets$/i,
@@ -50,7 +51,8 @@ module Dependabot
 
       def packages_config_files
         dependency_files.select do |f|
-          f.name.split("/").last.casecmp("packages.config").zero?
+          f.name.split("/").last.casecmp("packages.config").zero? ||
+          f.name.split("/").last.casecmp("corext.config").zero?
         end
       end
 
@@ -138,7 +140,7 @@ module Dependabot
 
         requirement_fn = requirement.fetch(:file)
         @declaration_finders[dependency.hash + requirement.hash] ||=
-          if requirement_fn.split("/").last.casecmp("packages.config").zero?
+          if requirement_fn.split("/").last.casecmp("packages.config").zero? || requirement_fn.split("/").last.casecmp("corext.config").zero?
             PackagesConfigDeclarationFinder.new(
               dependency_name: dependency.name,
               declaring_requirement: requirement,

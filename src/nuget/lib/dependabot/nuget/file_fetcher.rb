@@ -11,6 +11,7 @@ module Dependabot
 
       def self.required_files_in?(filenames)
         return true if filenames.any? { |f| f.match?(/^packages\.config$/i) }
+        return true if filenames.any? { |f| f.match?(/^corext\.config$/i) }
         return true if filenames.any? { |f| f.end_with?(".sln") }
         return true if filenames.any? { |f| f.match?("^src$") }
 
@@ -75,7 +76,7 @@ module Dependabot
         @packages_config_files ||=
           candidate_paths.filter_map do |dir|
             file = repo_contents(dir: dir).
-                   find { |f| f.name.casecmp("packages.config").zero? }
+                   find { |f| f.name.casecmp("packages.config").zero? || f.name.casecmp("corext.config").zero? }
             fetch_file_from_host(File.join(dir, file.name)) if file
           end
       end
