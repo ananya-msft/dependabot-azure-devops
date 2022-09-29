@@ -2,5 +2,6 @@
     "cSpell.words": [
         "azuredevops",
         "Kubernetes"
-    ]
+    ],
+    "python.formatting.provider": "black"
 }
