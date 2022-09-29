@@ -161,6 +161,16 @@ module Dependabot
                   node.attribute("value")&.value&.strip ||
                     node.at_xpath("./value")&.content&.strip
               }
+            end +
+            doc.css("corext > repositories > repo").map do |node|
+              {
+                key:
+                  node.attribute("name")&.value&.strip ||
+                    node.at_xpath("./name")&.content&.strip,
+                url:
+                  node.attribute("uri")&.value&.strip ||
+                    node.at_xpath("./uri")&.content&.strip
+              }
             end
 
           disabled_sources = disabled_sources(doc)

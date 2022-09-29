@@ -212,7 +212,7 @@ module Dependabot
         @nuget_config_files ||=
           candidate_paths.filter_map do |dir|
             file = repo_contents(dir: dir).
-                   find { |f| f.name.casecmp("nuget.config").zero? }
+                   find { |f| f.name.casecmp("nuget.config").zero? || f.name.casecmp("corext.config").zero? }
             file = fetch_file_from_host(File.join(dir, file.name)) if file
             file&.tap { |f| f.support_file = true }
           end
