@@ -23,7 +23,7 @@ $options = {
   credentials: [],
   provider: "azure",
 
-  directory: ENV["DEPENDABOT_DIRECTORY"] || "/", # Directory where the base dependency files are.
+  directory: ARGV[1] || ENV["DEPENDABOT_DIRECTORY"] || "/", # Directory where the base dependency files are.
   branch: ENV["DEPENDABOT_TARGET_BRANCH"] || nil, # Branch against which to create PRs
 
   allow_conditions: [],
@@ -42,7 +42,7 @@ $options = {
   # Details on the location of the repository
   azure_organization: ENV["AZURE_ORGANIZATION"],
   azure_project: ENV["AZURE_PROJECT"],
-  azure_repository: ENV["AZURE_REPOSITORY"],
+  azure_repository: ARGV[0] || ENV["AZURE_REPOSITORY"],
   azure_hostname: ENV["AZURE_HOSTNAME"] || "dev.azure.com",
   azure_protocol: ENV["AZURE_PROTOCOL"] || "https",
   azure_port: nil,
@@ -375,7 +375,7 @@ dependencies.select(&:top_level?).each do |dep|
     updated_deps.each do |dep|
       updated_files.each do |dep_file|
         # name; previous_version; version; project; path;
-        puts "#{dep.name};#{dep.previous_version};#{dep.version};#{$options[:azure_repository]};#{Pathname.new(File.join(dep_file.directory, dep_file.name)).cleanpath};"
+        puts "#{dep.name},#{dep.previous_version},#{dep.version},#{$options[:azure_repository]},#{Pathname.new(File.join(dep_file.directory, dep_file.name)).cleanpath},"
       end
     end
   end
